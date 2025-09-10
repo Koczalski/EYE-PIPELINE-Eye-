@@ -1,0 +1,74 @@
+Flowchart TD
+  %% ==============================
+  %% EYE PIPELINE — Unified Diagram
+  %% ==============================
+
+  %% 0. 入力
+  IN_FBX["入力FBX\navatar.fbx"]:::in --> ED_MENU
+
+  %% 1. Unityエディタ処理（抽出→JSON→辞書学習→プロンプト）
+  subgraph EDITOR["Unity Editor：抽出・書き出し"]
+    direction TB
+    ED_MENU["メニュー実行\nTools/Motirabbit/Eye JSON/Export"]:::op --> ED_CORE
+    ED_CORE["MotirabbitEyeJSON.cs\n候補収集・スコア算出・左右性推定"]:::core
+    ED_CORE -->|selection| J_SELE["selection\nobject_path / renderer / material / laterality / score"]:::data
+    ED_CORE -->|geometry| J_GEOM["geometry\nuv[] / normals[] / tangents[] / triangles[]"]:::data
+    ED_CORE --> J_PRETTY["出力: *.json（可読）"]:::file
+    ED_CORE --> J_MIN["出力: *.min.json（軽量）"]:::file
+    ED_CORE --> J_COMP["圧縮: *.min.json.br / .gz"]:::file
+    ED_CORE --> P_TXT["出力: *_prompt.txt（AI用）"]:::file
+    ED_CORE --> DIC["Motirabbit_Dictionary.json\n動的除外語 学習・保存"]:::aux
+  end
+
+  %% 2. AI生成（テクスチャ）
+  subgraph AI["AI生成：瞳テクスチャ"]
+    direction TB
+    P_TXT --> AI_CFG["PromptBuilder 設定\nスタイル/配色/UVヒント"]:::op
+    AI_CFG --> TX_PNG["生成: iris.png（1024x1024 PNG）"]:::file
+  end
+
+  %% 3. インポート＆マテリアル適用
+  subgraph IMPORT["Unity取込・適用"]
+    direction TB
+    J_PRETTY --> IMP["Importer"]:::op
+    J_MIN --> IMP
+    J_COMP --> IMP
+    TX_PNG --> IMP
+    IMP --> MAT["マテリアル適用\n（左右Unknown時はミラー複製）"]:::op
+    J_SELE --> MAT
+  end
+
+  %% 4. シェーダ統合（Built-in RP / Kaede / Geodesic）
+  subgraph SHADER["カスタムEyeシェーダ（Built-in RP）"]
+    direction TB
+    MAT --> SH_IN["Uniform/Texture\n_IrisTex, _ScleraTex, _Normal 等"]:::data
+    J_GEOM --> SH_TBN["UV＆TBN確立\n(uv, normals, tangents)"]:::core
+    SH_TBN --> SH_CORNEA["角膜屈折\nGeodesic Bézier補間ベース"]:::core
+    SH_CORNEA --> SH_IRIS["虹彩/リム（limbal）\n半径・縁エッジ・異方性"]:::core
+    SH_IRIS --> SH_SCLERA["強膜シェーディング\n簡易SSS/AO"]:::core
+    SH_SCLERA --> SH_SPEC["ハイライト/スペキュラ\n視線・光源追従"]:::core
+    SH_SPEC --> SH_OUT["合成出力（Eye）"]:::out
+  end
+
+  %% 5. ランタイム制御（表情/視線→シェーダ）
+  subgraph RUNTIME["ランタイム制御"]
+    direction TB
+    A3["Avatars 3.0 / 表情ブレンドシェイプ"]:::aux --> RT_PARAM["Shader Params\n瞳径/輝度/ハイライト偏位 など"]:::op
+    EYE_TRK["Eye Tracking\n視線ベクトル"]:::aux --> RT_PARAM
+    RT_PARAM --> SH_IRIS
+    RT_PARAM --> SH_SPEC
+  end
+
+  %% 6. 出力先
+  SH_OUT --> OUTPLAY["出力: 再生/VRChat/配信/収録"]:::out
+
+  %% Styles
+  classDef in fill:#eef6ff,stroke:#5b9cf0,color:#0b3360,stroke-width:1.1px;
+  classDef out fill:#eafff3,stroke:#1fbf75,color:#083b2a,stroke-width:1.1px;
+  classDef file fill:#fff7e6,stroke:#f0a000,color:#5a3b00,stroke-width:1.1px;
+  classDef data fill:#f2f2ff,stroke:#7a68f8,color:#2f2b5a,stroke-width:1.1px;
+  classDef op fill:#fff,stroke:#9aa4b2,color:#1f2937,stroke-width:1.1px;
+  classDef core fill:#f7e8ff,stroke:#b24de6,color:#3c1156,stroke-width:1.1px;
+  classDef aux fill:#f0f9ff,stroke:#38bdf8,color:#0c4a6e,stroke-width:1.1px;
+
+これを、Githubで用にアルゴリズム解説README.mdを作成して
